@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "inputs": [
+        {
+            "id": "GetQuantowerPID",
+            "type": "command",
+            "command": "shellCommand.execute",
+            "args": {
+                "command": "powershell (Get-Process Starter).Id",
+                "description": "Finds the PID of the running Quantower UI process",
+                "useSingleResult": true
+            }
+        }
+    ],
+    "configurations": [
+        {
+            "name": "Attach to Quantower (Auto)",
+            "type": "coreclr",
+            "request": "attach",
+            "processId": "${input:GetQuantowerPID}"
+        }
+    ]
+}
