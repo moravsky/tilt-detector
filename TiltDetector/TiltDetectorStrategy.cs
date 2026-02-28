@@ -4,22 +4,24 @@ using TradingPlatform.BusinessLayer;
 
 namespace TiltDetector
 {
-    public partial class TiltDetectorStrategy : Strategy, IDisposable, IStrategySettings, IStrategyLogger
+    public partial class TiltDetectorStrategy
+        : Strategy,
+            IDisposable,
+            IStrategySettings,
+            IStrategyLogger
     {
         private bool _disposed;
-        private StrategyCore _core;
+        private StrategyCore? _core;
 
         public TiltDetectorStrategy()
         {
-            this.Name = "TiltDetector42";
+            this.Name = "TiltDetector";
             this.Description = "Detects tilt conditions and locks trading";
         }
 
         protected override void OnRun()
         {
             _core = new StrategyCore(new StrategyContext(this));
-            _core.Start();
-
             Core.TradeAdded += OnTradeAdded;
         }
 
@@ -30,7 +32,7 @@ namespace TiltDetector
 
             try
             {
-                _core.OnTradeFilled(Trade);
+                _core.OnTradeAdded(Trade);
             }
             catch (Exception ex)
             {
@@ -41,11 +43,20 @@ namespace TiltDetector
         protected override void OnStop()
         {
             Core.TradeAdded -= OnTradeAdded;
-            _core?.Stop();
             _core = null;
         }
 
         protected override void OnRemove() => Dispose();
+
+        public static DateTime UtcNow => Core.Instance.TimeUtils.DateTimeUtcNow;
+
+        public static IEnumerable<Trade> GetTrades(
+            TradesHistoryRequestParameters tradesHistoryRequestParameters
+        )
+        {
+            var trades = Core.Instance.GetTrades(tradesHistoryRequestParameters);
+            return trades;
+        }
 
         void IDisposable.Dispose()
         {
