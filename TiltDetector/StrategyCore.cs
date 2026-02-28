@@ -8,20 +8,11 @@ namespace TiltDetector
         private readonly IStrategyLogger _logger =
             context.Logger ?? throw new ArgumentNullException(nameof(context.Logger));
 
-        private double tiltScore;
+        public double TiltScore { get; private set; }
 
-        public void Start()
-        {
-            _logger.LogInfo("TiltDetector started");
-        }
+        public event Action? TradingLocked;
+        public event Action? TradingUnlocked;
 
-        public void Stop()
-        {
-            _logger.LogInfo("TiltDetector stopped");
-        }
-
-        public void OnTradeFilled(Trade trade) { }
-
-        public void Decay() { }
+        public void OnTradeAdded(Trade trade) { }
     }
 }

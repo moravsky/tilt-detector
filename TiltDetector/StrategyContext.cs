@@ -22,12 +22,28 @@ namespace TiltDetector
     {
         IStrategyLogger Logger { get; }
         IStrategySettings Settings { get; }
+        Func<DateTime> UtcNow { get; }
+        IEnumerable<Trade> GetTrades(TradesHistoryRequestParameters tradesHistoryRequestParameters);
     }
 
-    public record StrategyContext(IStrategyLogger Logger, IStrategySettings Settings)
-        : IStrategyContext
+    public record StrategyContext(
+        IStrategyLogger Logger,
+        IStrategySettings Settings,
+        Func<DateTime> UtcNow
+    ) : IStrategyContext
     {
         public StrategyContext(TiltDetectorStrategy tiltDetectorStrategy)
-            : this(Logger: tiltDetectorStrategy, Settings: tiltDetectorStrategy) { }
+            : this(
+                Logger: tiltDetectorStrategy,
+                Settings: tiltDetectorStrategy,
+                UtcNow: () => TiltDetectorStrategy.UtcNow
+            ) { }
+
+        public IEnumerable<Trade> GetTrades(
+            TradesHistoryRequestParameters tradesHistoryRequestParameters
+        )
+        {
+            return TiltDetectorStrategy.GetTrades(tradesHistoryRequestParameters);
+        }
     }
 }
