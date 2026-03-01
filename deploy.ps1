@@ -22,10 +22,10 @@ if ($Config -eq "Debug" -and $Target -eq "Prod") {
 }
 
 $root = $PSScriptRoot
-$source = Join-Path $root "AutoSizeStrategy\bin\$Config"
+$source = Join-Path $root "TiltDetector\bin\$Config"
 
 $destRoot = if ($Target -eq "Dev") { "C:\QuantowerDev" } else { "C:\Quantower" }
-$dest = "$destRoot\Settings\Scripts\Strategies\AutoSizeStrategy"
+$dest = "$destRoot\Settings\Scripts\Strategies\TiltDetector"
 
 # Safety checks
 if ([string]::IsNullOrWhiteSpace($dest)) {
@@ -33,7 +33,7 @@ if ([string]::IsNullOrWhiteSpace($dest)) {
     exit 1
 }
 
-if ($dest -notmatch "Quantower.*AutoSizeStrategy$") {
+if ($dest -notmatch "Quantower.*TiltDetector$") {
     Write-Error "Destination path doesn't look right: $dest. Aborting."
     exit 1
 }
