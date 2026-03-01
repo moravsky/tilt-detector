@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading;
 using TradingPlatform.BusinessLayer;
 
 namespace TiltDetector
@@ -13,10 +14,13 @@ namespace TiltDetector
         private const int MaxHalfLives = 7;
 
         public double TiltScore { get; private set; }
-        private bool _locked;
-
+        private bool _tradingLocked;
         public event Action? TradingLocked;
         public event Action? TradingUnlocked;
+
+        private static readonly TimeSpan DecayTimerInterval = TimeSpan.FromMinutes(1);
+        private Timer? _decayTimer;
+        private readonly object _lock = new();
 
         public void Run()
         {
@@ -35,7 +39,12 @@ namespace TiltDetector
 
         private void UpdateTiltScore(DateTime utcNow)
         {
-            TiltScore = 0;
+            TiltScore = GetTiltScore(utcNow);
+            UpdateTradingState();
+        }
+
+        private double GetTiltScore(DateTime utcNow)
+        {
             var tradesHistoryRequestParameters = new TradesHistoryRequestParameters()
             {
                 From = utcNow.AddMinutes(-_settings.HalfLifeMinutes * MaxHalfLives).ToLocalTime(),
@@ -46,17 +55,8 @@ namespace TiltDetector
                 .GetTrades(tradesHistoryRequestParameters)
                 .Where(t => t.Account.Id == _settings.Account.Id);
 
-            TiltScore = trades.Where(t => t.GrossPnl?.Value < 0).Sum(t => GetImpact(t, utcNow));
-            if (!_locked && TiltScore >= _settings.LockThreshold)
-            {
-                _locked = true;
-                TradingLocked?.Invoke();
-            }
-            else if (_locked && TiltScore <= _settings.UnlockThreshold)
-            {
-                _locked = false;
-                TradingUnlocked?.Invoke();
-            }
+            var tiltScore = trades.Where(t => t.GrossPnl?.Value < 0).Sum(t => GetImpact(t, utcNow));
+            return tiltScore;
         }
 
         private double GetImpact(Trade trade, DateTime now)
@@ -66,6 +66,20 @@ namespace TiltDetector
             var weight = Math.Pow(2, -ageMilliseconds / (_settings.HalfLifeMinutes * 60_000.0));
             var impact = -trade.GrossPnl.Value * weight;
             return impact;
+        }
+
+        private void UpdateTradingState()
+        {
+            if (!_tradingLocked && TiltScore >= _settings.LockThreshold)
+            {
+                _tradingLocked = true;
+                TradingLocked?.Invoke();
+            }
+            else if (_tradingLocked && TiltScore <= _settings.UnlockThreshold)
+            {
+                _tradingLocked = false;
+                TradingUnlocked?.Invoke();
+            }
         }
     }
 }
