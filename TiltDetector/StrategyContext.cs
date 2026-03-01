@@ -13,6 +13,7 @@ namespace TiltDetector
 
     public interface IStrategySettings
     {
+        Account Account { get; }
         double HalfLifeMinutes { get; }
         double LockThreshold { get; }
         double UnlockThreshold { get; }
@@ -22,22 +23,25 @@ namespace TiltDetector
     {
         IStrategyLogger Logger { get; }
         IStrategySettings Settings { get; }
-        Func<DateTime> UtcNow { get; }
+        DateTime HeartbeatUtc { get; }
         IEnumerable<Trade> GetTrades(TradesHistoryRequestParameters tradesHistoryRequestParameters);
     }
 
-    public record StrategyContext(
-        IStrategyLogger Logger,
-        IStrategySettings Settings,
-        Func<DateTime> UtcNow
-    ) : IStrategyContext
+    public record StrategyContext(IStrategyLogger Logger, IStrategySettings Settings)
+        : IStrategyContext
     {
+        private readonly TiltDetectorStrategy _tiltDetectorStrategy;
+
         public StrategyContext(TiltDetectorStrategy tiltDetectorStrategy)
-            : this(
-                Logger: tiltDetectorStrategy,
-                Settings: tiltDetectorStrategy,
-                UtcNow: () => TiltDetectorStrategy.UtcNow
-            ) { }
+            : this(Logger: tiltDetectorStrategy, Settings: tiltDetectorStrategy)
+        {
+            _tiltDetectorStrategy = tiltDetectorStrategy;
+        }
+
+        public DateTime HeartbeatUtc
+        {
+            get { return _tiltDetectorStrategy.HeartbeatUtc; }
+        }
 
         public IEnumerable<Trade> GetTrades(
             TradesHistoryRequestParameters tradesHistoryRequestParameters
