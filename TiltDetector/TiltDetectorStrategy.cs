@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using TradingPlatform.BusinessLayer;
 
 namespace TiltDetector
@@ -12,6 +13,7 @@ namespace TiltDetector
     {
         private bool _disposed;
         private StrategyCore? _core;
+        private Symbol? _heartbeatSymbol;
 
         public TiltDetectorStrategy()
         {
@@ -23,6 +25,36 @@ namespace TiltDetector
         {
             _core = new StrategyCore(new StrategyContext(this));
             Core.TradeAdded += OnTradeAdded;
+            try
+            {
+                if (Account == null)
+                {
+                    LogError("Target account not set, cannot continue");
+                    return;
+                }
+                InitializeHeartbeat();
+                _core.Run();
+            }
+            catch (Exception ex)
+            {
+                LogError($"Run() failed: {ex}");
+            }
+        }
+
+        public void InitializeHeartbeat()
+        {
+            var firstSymbol = Core
+                .Symbols.Where(s => s.ConnectionId == Account.ConnectionId)
+                .FirstOrDefault();
+
+            if (firstSymbol == null)
+            {
+                throw new ApplicationException(
+                    "Couldn't initialize heartbeat, firstSymbol is null"
+                );
+            }
+
+            _heartbeatSymbol = Core.GetSymbol(firstSymbol.CreateInfo());
         }
 
         private void OnTradeAdded(Trade Trade)
@@ -36,7 +68,7 @@ namespace TiltDetector
             }
             catch (Exception ex)
             {
-                Log($"OnTradeAdded failed: {ex}", StrategyLoggingLevel.Error);
+                LogError($"OnTradeAdded failed: {ex}");
             }
         }
 
@@ -48,7 +80,14 @@ namespace TiltDetector
 
         protected override void OnRemove() => Dispose();
 
-        public static DateTime UtcNow => Core.Instance.TimeUtils.DateTimeUtcNow;
+        public DateTime HeartbeatUtc
+        {
+            get
+            {
+                return _heartbeatSymbol?.QuoteDateTime.ToUniversalTime()
+                    ?? throw new ApplicationException("Couldn't initialize heartbeat");
+            }
+        }
 
         public static IEnumerable<Trade> GetTrades(
             TradesHistoryRequestParameters tradesHistoryRequestParameters
