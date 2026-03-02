@@ -139,6 +139,50 @@ namespace TiltDetector
 
         protected override void OnRemove() => Dispose();
 
+        [Obsolete("Use OnInitializeMetrics()")]
+        protected override List<StrategyMetric> OnGetMetrics()
+        {
+            var result = base.OnGetMetrics();
+
+            try
+            {
+                result.Add(
+                    new StrategyMetric
+                    {
+                        Name = "Tilt Score",
+                        FormattedValue = _core != null ? $"{_core.TiltScore:F2}" : "N/A",
+                    }
+                );
+                result.Add(
+                    new StrategyMetric
+                    {
+                        Name = "Lock Threshold",
+                        FormattedValue = $"{LockThreshold:F2}",
+                    }
+                );
+                result.Add(
+                    new StrategyMetric
+                    {
+                        Name = "Unlock Threshold",
+                        FormattedValue = $"{UnlockThreshold:F2}",
+                    }
+                );
+                result.Add(
+                    new StrategyMetric
+                    {
+                        Name = "Tilt Decay Halflife (Mins)",
+                        FormattedValue = $"{HalfLifeMinutes}",
+                    }
+                );
+            }
+            catch (Exception ex)
+            {
+                LogError($"OnGetMetrics failed: {ex.Message}");
+            }
+
+            return result;
+        }
+
         public static IEnumerable<Trade> GetTrades(
             TradesHistoryRequestParameters tradesHistoryRequestParameters
         )
