@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using TradingPlatform.BusinessLayer;
 
@@ -43,6 +44,7 @@ namespace TiltDetector
                     TimeProvider: _timeProvider
                 );
                 _core = new StrategyCore(context);
+                _core.PropertyChanged += Core_PropertyChanged;
 
                 Core.TradeAdded += OnTradeAdded;
                 _core.Run();
@@ -50,6 +52,27 @@ namespace TiltDetector
             catch (Exception ex)
             {
                 LogError($"Run() failed: {ex}");
+            }
+        }
+
+        private void Core_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(StrategyCore.IsTradingLocked) && _core != null)
+            {
+                if (_core.IsTradingLocked)
+                {
+                    LogInfo(
+                        $"Tilt score {_core.TiltScore} above lock threshold {LockThreshold}! Locking platform trading."
+                    );
+                    Core.Instance.TradingStatus = TradingStatus.Locked;
+                }
+                else
+                {
+                    LogInfo(
+                        $"Tilt score {_core.TiltScore} decayed below unlock threshold {UnlockThreshold}. Unlocking platform trading."
+                    );
+                    Core.Instance.TradingStatus = TradingStatus.Allowed;
+                }
             }
         }
 
