@@ -151,7 +151,11 @@ namespace TiltDetector.Test
             core.Run();
 
             bool locked = false;
-            core.TradingLocked += () => locked = true;
+            core.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(StrategyCore.IsTradingLocked))
+                    locked = core.IsTradingLocked;
+            };
 
             var bigLoss = MakeLoss(_now, LockThreshold + 1);
             _contextMock
@@ -170,12 +174,16 @@ namespace TiltDetector.Test
             var core = CreateStrategyCore([bigLoss]);
             core.Run();
 
-            int lockCount = 0;
-            core.TradingLocked += () => lockCount++;
+            int lockEventCount = 0;
+            core.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(StrategyCore.IsTradingLocked) && core.IsTradingLocked)
+                    lockEventCount++;
+            };
 
             core.OnTradeAdded(bigLoss);
 
-            Assert.Equal(0, lockCount);
+            Assert.Equal(0, lockEventCount);
         }
 
         [Fact]
@@ -186,7 +194,11 @@ namespace TiltDetector.Test
             core.Run();
 
             bool unlocked = false;
-            core.TradingUnlocked += () => unlocked = true;
+            core.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(StrategyCore.IsTradingLocked) && !core.IsTradingLocked)
+                    unlocked = true;
+            };
 
             _contextMock
                 .Setup(c => c.GetTrades(It.IsAny<TradesHistoryRequestParameters>()))
@@ -204,7 +216,11 @@ namespace TiltDetector.Test
             core.Run();
 
             int unlockCount = 0;
-            core.TradingUnlocked += () => unlockCount++;
+            core.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(StrategyCore.IsTradingLocked) && !core.IsTradingLocked)
+                    unlockCount++;
+            };
 
             core.OnTradeAdded(MakeWin(_now, 1));
 
@@ -239,30 +255,28 @@ namespace TiltDetector.Test
         [Fact]
         public void DecayTimer_FiresUnlockEvent_WhenScoreDropsBelowThreshold()
         {
-            // Start with a massive loss (e.g., 2500) that immediately locks the strategy
             var bigLoss = MakeLoss(_now, LockThreshold + 500);
             var core = CreateStrategyCore([bigLoss]);
 
             bool unlocked = false;
-            core.TradingUnlocked += () => unlocked = true;
+            core.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(StrategyCore.IsTradingLocked) && !core.IsTradingLocked)
+                    unlocked = true;
+            };
 
             core.Run();
 
-            // Verify we are currently locked
             Assert.True(core.TiltScore >= LockThreshold);
             Assert.False(unlocked);
 
-            // Fast-forward time by 2 Half-Lives (60 minutes).
-            // The score drops to 25% of the original (2500 * 0.25 = 625),
-            // which is well below the UnlockThreshold (1500).
             _timeProvider.Advance(_now.AddMinutes(HalfLifeMinutes * 2));
 
-            // The timer executed, the score decayed, and the unlock event fired!
             Assert.True(
                 core.TiltScore < UnlockThreshold,
                 "Score should have dropped below UnlockThreshold"
             );
-            Assert.True(unlocked, "TradingUnlocked event should have fired");
+            Assert.True(unlocked, "PropertyChanged event should have fired indicating unlock");
         }
     }
 }
