@@ -23,12 +23,15 @@ namespace TiltDetector
     {
         IStrategyLogger Logger { get; }
         IStrategySettings Settings { get; }
-        DateTime HeartbeatUtc { get; }
+        TimeProvider TimeProvider { get; }
         IEnumerable<Trade> GetTrades(TradesHistoryRequestParameters tradesHistoryRequestParameters);
     }
 
-    public record StrategyContext(IStrategyLogger Logger, IStrategySettings Settings)
-        : IStrategyContext
+    public record StrategyContext(
+        IStrategyLogger Logger,
+        IStrategySettings Settings,
+        TimeProvider? TimeProvider = null
+    ) : IStrategyContext
     {
         private readonly TiltDetectorStrategy _tiltDetectorStrategy;
 
@@ -38,10 +41,8 @@ namespace TiltDetector
             _tiltDetectorStrategy = tiltDetectorStrategy;
         }
 
-        public DateTime HeartbeatUtc
-        {
-            get { return _tiltDetectorStrategy.HeartbeatUtc; }
-        }
+        // Fallback to the real system clock if not explicitly provided
+        TimeProvider IStrategyContext.TimeProvider => TimeProvider ?? TimeProvider.System;
 
         public IEnumerable<Trade> GetTrades(
             TradesHistoryRequestParameters tradesHistoryRequestParameters

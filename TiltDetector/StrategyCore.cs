@@ -19,7 +19,7 @@ namespace TiltDetector
         public event Action? TradingUnlocked;
 
         private static readonly TimeSpan DecayTimerInterval = TimeSpan.FromMinutes(1);
-        private Timer? _decayTimer;
+        private ITimer? _decayTimer;
         private readonly object _lock = new();
 
         public void Run()
@@ -28,7 +28,25 @@ namespace TiltDetector
                 _settings.Account,
                 "Target account not set, cannot continue"
             );
-            UpdateTiltScore(context.HeartbeatUtc);
+
+            var now = context.TimeProvider.GetUtcNow().UtcDateTime;
+            // Using named arguments for maximum readability
+            _decayTimer = context.TimeProvider.CreateTimer(
+                callback: _ =>
+                {
+                    try
+                    {
+                        UpdateTiltScore(context.TimeProvider.GetUtcNow().UtcDateTime);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError($"Decay timer failed: {ex.Message}");
+                    }
+                },
+                state: null,
+                dueTime: TimeSpan.Zero, // How long to wait before the FIRST tick
+                period: DecayTimerInterval // How long to wait between ALL SUBSEQUENT ticks
+            );
         }
 
         public void OnTradeAdded(Trade trade)
