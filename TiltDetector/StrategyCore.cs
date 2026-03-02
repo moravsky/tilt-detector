@@ -1,11 +1,13 @@
 using System;
+using System.ComponentModel;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using TradingPlatform.BusinessLayer;
 
 namespace TiltDetector
 {
-    public class StrategyCore(IStrategyContext context)
+    public class StrategyCore(IStrategyContext context) : INotifyPropertyChanged
     {
         private readonly IStrategyLogger _logger =
             context.Logger ?? throw new ArgumentNullException(nameof(context.Logger));
@@ -13,10 +15,35 @@ namespace TiltDetector
             context.Settings ?? throw new ArgumentNullException(nameof(context.Settings));
         private const int MaxHalfLives = 7;
 
-        public double TiltScore { get; private set; }
-        private bool _tradingLocked;
-        public event Action? TradingLocked;
-        public event Action? TradingUnlocked;
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        protected bool SetProperty<T>(
+            ref T backingStore,
+            T value,
+            [CallerMemberName] string propertyName = ""
+        )
+        {
+            if (System.Collections.Generic.EqualityComparer<T>.Default.Equals(backingStore, value))
+                return false;
+
+            backingStore = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            return true;
+        }
+
+        private double _tiltScore;
+        public double TiltScore
+        {
+            get => _tiltScore;
+            private set => SetProperty(ref _tiltScore, value);
+        }
+
+        private bool _isTradingLocked;
+        public bool IsTradingLocked
+        {
+            get => _isTradingLocked;
+            private set => SetProperty(ref _isTradingLocked, value);
+        }
 
         private static readonly TimeSpan DecayTimerInterval = TimeSpan.FromMinutes(1);
         private ITimer? _decayTimer;
@@ -30,7 +57,7 @@ namespace TiltDetector
             );
 
             var now = context.TimeProvider.GetUtcNow().UtcDateTime;
-            // Using named arguments for maximum readability
+
             _decayTimer = context.TimeProvider.CreateTimer(
                 callback: _ =>
                 {
@@ -44,8 +71,8 @@ namespace TiltDetector
                     }
                 },
                 state: null,
-                dueTime: TimeSpan.Zero, // How long to wait before the FIRST tick
-                period: DecayTimerInterval // How long to wait between ALL SUBSEQUENT ticks
+                dueTime: TimeSpan.Zero,
+                period: DecayTimerInterval
             );
         }
 
@@ -88,15 +115,13 @@ namespace TiltDetector
 
         private void UpdateTradingState()
         {
-            if (!_tradingLocked && TiltScore >= _settings.LockThreshold)
+            if (TiltScore >= _settings.LockThreshold)
             {
-                _tradingLocked = true;
-                TradingLocked?.Invoke();
+                IsTradingLocked = true;
             }
-            else if (_tradingLocked && TiltScore <= _settings.UnlockThreshold)
+            else if (TiltScore <= _settings.UnlockThreshold)
             {
-                _tradingLocked = false;
-                TradingUnlocked?.Invoke();
+                IsTradingLocked = false;
             }
         }
     }
