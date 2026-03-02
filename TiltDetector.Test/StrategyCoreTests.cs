@@ -19,7 +19,16 @@ namespace TiltDetector.Test
         private const double UnlockThreshold = 1500.0;
 
         private readonly Account _account;
-        private readonly DateTime _now = new DateTime(2026, 3, 1, 12, 0, 0, DateTimeKind.Utc);
+        private readonly DateTime _now = new DateTime(
+            year: 2026,
+            month: 3,
+            day: 1,
+            hour: 12,
+            minute: 0,
+            second: 0,
+            kind: DateTimeKind.Utc
+        );
+        private readonly CustomTimeProvider _timeProvider;
 
         public StrategyCoreTests()
         {
@@ -33,10 +42,12 @@ namespace TiltDetector.Test
             _settingsMock.SetupGet(s => s.LockThreshold).Returns(LockThreshold);
             _settingsMock.SetupGet(s => s.UnlockThreshold).Returns(UnlockThreshold);
 
+            _timeProvider = new CustomTimeProvider(_now);
+
             _contextMock = new Mock<IStrategyContext>();
             _contextMock.SetupGet(c => c.Logger).Returns(_loggerMock.Object);
             _contextMock.SetupGet(c => c.Settings).Returns(_settingsMock.Object);
-            _contextMock.SetupGet(c => c.HeartbeatUtc).Returns(_now);
+            _contextMock.SetupGet(c => c.TimeProvider).Returns(_timeProvider);
             _contextMock
                 .Setup(c => c.GetTrades(It.IsAny<TradesHistoryRequestParameters>()))
                 .Returns([]);
@@ -198,6 +209,60 @@ namespace TiltDetector.Test
             core.OnTradeAdded(MakeWin(_now, 1));
 
             Assert.Equal(0, unlockCount);
+        }
+
+        [Fact]
+        public void DecayTimer_AutomaticallyUpdatesScore_WhenTimePasses()
+        {
+            // Start with a 100 point loss
+            var trade = MakeLoss(_now, 100);
+            var core = CreateStrategyCore([trade]);
+
+            // Run evaluates the initial score (100) and starts the background timer
+            core.Run();
+            Assert.Equal(100.0, core.TiltScore, precision: 6);
+
+            // Fast-forward the CustomTimeProvider by exactly 1 Half-Life (30 mins).
+            // This natively triggers the background timer callback.
+            _timeProvider.Advance(_now.AddMinutes(HalfLifeMinutes));
+
+            // The timer should have successfully recalculated the score to exactly 50%
+            Assert.Equal(50.0, core.TiltScore, precision: 6);
+
+            // Fast-forward by another Half-Life
+            _timeProvider.Advance(_now.AddMinutes(HalfLifeMinutes * 2));
+
+            // Score should now be 25% of the original
+            Assert.Equal(25.0, core.TiltScore, precision: 6);
+        }
+
+        [Fact]
+        public void DecayTimer_FiresUnlockEvent_WhenScoreDropsBelowThreshold()
+        {
+            // Start with a massive loss (e.g., 2500) that immediately locks the strategy
+            var bigLoss = MakeLoss(_now, LockThreshold + 500);
+            var core = CreateStrategyCore([bigLoss]);
+
+            bool unlocked = false;
+            core.TradingUnlocked += () => unlocked = true;
+
+            core.Run();
+
+            // Verify we are currently locked
+            Assert.True(core.TiltScore >= LockThreshold);
+            Assert.False(unlocked);
+
+            // Fast-forward time by 2 Half-Lives (60 minutes).
+            // The score drops to 25% of the original (2500 * 0.25 = 625),
+            // which is well below the UnlockThreshold (1500).
+            _timeProvider.Advance(_now.AddMinutes(HalfLifeMinutes * 2));
+
+            // The timer executed, the score decayed, and the unlock event fired!
+            Assert.True(
+                core.TiltScore < UnlockThreshold,
+                "Score should have dropped below UnlockThreshold"
+            );
+            Assert.True(unlocked, "TradingUnlocked event should have fired");
         }
     }
 }

@@ -80,15 +80,6 @@ namespace TiltDetector
 
         protected override void OnRemove() => Dispose();
 
-        public DateTime HeartbeatUtc
-        {
-            get
-            {
-                return _heartbeatSymbol?.QuoteDateTime.ToUniversalTime()
-                    ?? throw new ApplicationException("Couldn't initialize heartbeat");
-            }
-        }
-
         public static IEnumerable<Trade> GetTrades(
             TradesHistoryRequestParameters tradesHistoryRequestParameters
         )
