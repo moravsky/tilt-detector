@@ -18,12 +18,15 @@ namespace TiltDetector
 
         public override DateTimeOffset GetUtcNow() => _utcNow;
 
-        public void Advance(DateTimeOffset newTime)
+        public bool Advance(DateTimeOffset newTime)
         {
             CustomTimer[] timersSnapshot;
 
             lock (_lock)
             {
+                if (newTime <= _utcNow)
+                    return false;
+
                 _utcNow = newTime;
                 // Snapshot the list to prevent Collection Modified exceptions
                 timersSnapshot = _timers.ToArray();
@@ -34,6 +37,8 @@ namespace TiltDetector
             {
                 timer.TryFire(newTime);
             }
+
+            return true;
         }
 
         public override ITimer CreateTimer(

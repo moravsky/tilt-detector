@@ -15,6 +15,9 @@ namespace TiltDetector
         private StrategyCore? _core;
         private Symbol? _heartbeatSymbol;
 
+        // Add our custom time engine
+        private CustomTimeProvider? _timeProvider;
+
         public TiltDetectorStrategy()
         {
             this.Name = "TiltDetector";
@@ -23,8 +26,6 @@ namespace TiltDetector
 
         protected override void OnRun()
         {
-            _core = new StrategyCore(new StrategyContext(this));
-            Core.TradeAdded += OnTradeAdded;
             try
             {
                 if (Account == null)
@@ -32,7 +33,18 @@ namespace TiltDetector
                     LogError("Target account not set, cannot continue");
                     return;
                 }
+
                 InitializeHeartbeat();
+                _timeProvider = new CustomTimeProvider(DateTimeOffset.MinValue);
+
+                var context = new StrategyContext(
+                    Logger: this,
+                    Settings: this,
+                    TimeProvider: _timeProvider
+                );
+                _core = new StrategyCore(context);
+
+                Core.TradeAdded += OnTradeAdded;
                 _core.Run();
             }
             catch (Exception ex)
@@ -55,6 +67,16 @@ namespace TiltDetector
             }
 
             _heartbeatSymbol = Core.GetSymbol(firstSymbol.CreateInfo());
+            _heartbeatSymbol.NewQuote += OnNewQuote;
+        }
+
+        private void OnNewQuote(Symbol symbol, Quote quote)
+        {
+            if (_disposed || _timeProvider == null)
+                return;
+
+            var quoteTime = quote.Time.ToUniversalTime();
+            _timeProvider.Advance(quoteTime);
         }
 
         private void OnTradeAdded(Trade Trade)
@@ -64,7 +86,7 @@ namespace TiltDetector
 
             try
             {
-                _core.OnTradeAdded(Trade);
+                _core?.OnTradeAdded(Trade);
             }
             catch (Exception ex)
             {
@@ -75,7 +97,21 @@ namespace TiltDetector
         protected override void OnStop()
         {
             Core.TradeAdded -= OnTradeAdded;
+
+            // Clean up the event subscription to prevent memory leaks
+            if (_heartbeatSymbol != null)
+            {
+                _heartbeatSymbol.NewQuote -= OnNewQuote;
+            }
+
+            // Dispose the core (which drops the timer)
+            if (_core is IDisposable disposableCore)
+            {
+                disposableCore.Dispose();
+            }
+
             _core = null;
+            _timeProvider = null;
         }
 
         protected override void OnRemove() => Dispose();
