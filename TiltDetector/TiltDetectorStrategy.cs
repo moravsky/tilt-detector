@@ -36,7 +36,7 @@ namespace TiltDetector
                 }
 
                 InitializeHeartbeat();
-                _timeProvider = new CustomTimeProvider(DateTimeOffset.MinValue);
+                _timeProvider = new CustomTimeProvider(DateTimeOffset.UnixEpoch);
 
                 var context = new StrategyContext(
                     Logger: this,
