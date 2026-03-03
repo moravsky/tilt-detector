@@ -15,8 +15,6 @@ namespace TiltDetector
         private bool _disposed;
         private StrategyCore? _core;
         private Symbol? _heartbeatSymbol;
-
-        // Add our custom time engine
         private CustomTimeProvider? _timeProvider;
 
         public TiltDetectorStrategy()
@@ -121,19 +119,19 @@ namespace TiltDetector
         {
             Core.TradeAdded -= OnTradeAdded;
 
-            // Clean up the event subscription to prevent memory leaks
             if (_heartbeatSymbol != null)
             {
                 _heartbeatSymbol.NewQuote -= OnNewQuote;
+                _heartbeatSymbol = null;
             }
 
-            // Dispose the core (which drops the timer)
-            if (_core is IDisposable disposableCore)
+            if (_core != null)
             {
-                disposableCore.Dispose();
+                _core.PropertyChanged -= Core_PropertyChanged;
+                _core.Dispose();
+                _core = null;
             }
 
-            _core = null;
             _timeProvider = null;
         }
 
@@ -191,19 +189,24 @@ namespace TiltDetector
             return trades;
         }
 
-        void IDisposable.Dispose()
+        public new void Dispose()
         {
             Dispose(true);
             GC.SuppressFinalize(this);
         }
 
-        public void Dispose(bool disposing)
+        protected virtual void Dispose(bool disposing)
         {
-            if (!_disposed && disposing)
+            if (!_disposed)
             {
+                if (disposing)
+                {
+                    // Clean up managed resources
+                    OnStop();
+                    base.Dispose();
+                }
+
                 _disposed = true;
-                OnStop();
-                base.Dispose();
             }
         }
 

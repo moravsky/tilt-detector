@@ -7,13 +7,14 @@ using TradingPlatform.BusinessLayer;
 
 namespace TiltDetector
 {
-    public class StrategyCore(IStrategyContext context) : INotifyPropertyChanged
+    public class StrategyCore(IStrategyContext context) : INotifyPropertyChanged, IDisposable
     {
         private readonly IStrategyLogger _logger =
             context.Logger ?? throw new ArgumentNullException(nameof(context.Logger));
         private readonly IStrategySettings _settings =
             context.Settings ?? throw new ArgumentNullException(nameof(context.Settings));
         private const int MaxHalfLives = 7;
+        private bool _disposed = false;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -122,6 +123,25 @@ namespace TiltDetector
             else if (TiltScore <= _settings.UnlockThreshold)
             {
                 IsTradingLocked = false;
+            }
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed)
+            {
+                if (disposing)
+                {
+                    _decayTimer?.Dispose();
+                }
+
+                _disposed = true;
             }
         }
     }
