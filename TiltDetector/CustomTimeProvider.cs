@@ -105,7 +105,12 @@ namespace TiltDetector
                     if (_period == Timeout.InfiniteTimeSpan)
                         _nextFire = DateTimeOffset.MaxValue;
                     else
-                        _nextFire = now + _period;
+                    {
+                        while (_nextFire <= now)
+                        {
+                            _nextFire += _period;
+                        }
+                    }
                 }
 
                 // Store the exact context time BEFORE firing the callback

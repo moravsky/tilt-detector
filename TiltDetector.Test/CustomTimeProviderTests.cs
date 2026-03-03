@@ -230,5 +230,29 @@ namespace TiltDetector.Test
             // Should fire immediately without calling Advance
             Assert.Equal(1, count);
         }
+
+        [Fact]
+        public void Advance_MaintainsAbsoluteSchedule_AndPreventsTimerDrift()
+        {
+            var tp = new CustomTimeProvider(_start);
+            int count = 0;
+
+            // Create timer with 1-minute due time and 1-minute period
+            tp.CreateTimer(_ => count++, null, _period, _period);
+
+            // Simulate delayed execution: Advance 1 minute + 15 seconds
+            var drift = TimeSpan.FromSeconds(15);
+            tp.Advance(_start + _period + drift);
+
+            // Timer should fire once for the first period
+            Assert.Equal(1, count);
+
+            // Advance exactly to the 2-minute mark
+            tp.Advance(_start + _period * 2);
+
+            // _nextFire catches up strictly by _period intervals (to 2m00s).
+            // Count should be 2!
+            Assert.Equal(2, count);
+        }
     }
 }
