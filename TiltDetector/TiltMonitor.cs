@@ -7,7 +7,7 @@ using TradingPlatform.BusinessLayer;
 
 namespace TiltDetector
 {
-    public class StrategyCore(IStrategyContext context) : INotifyPropertyChanged, IDisposable
+    public class TiltMonitor(IStrategyContext context) : INotifyPropertyChanged, IDisposable
     {
         private readonly IStrategyLogger _logger =
             context.Logger ?? throw new ArgumentNullException(nameof(context.Logger));
@@ -97,21 +97,22 @@ namespace TiltDetector
                 To = utcNow.AddSeconds(10).ToLocalTime(),
             };
 
-            var trades = context
-                .GetTrades(tradesHistoryRequestParameters)
-                .Where(t => t.Account.Id == _settings.Account.Id);
+            double tiltScore = 0;
+            double halfLifeDivisor = _settings.HalfLifeMinutes * 60_000.0;
 
-            var tiltScore = trades.Where(t => t.GrossPnl?.Value < 0).Sum(t => GetImpact(t, utcNow));
+            foreach (var trade in context.GetTrades(tradesHistoryRequestParameters))
+            {
+                if (trade.Account.Id == _settings.Account?.Id && trade.GrossPnl?.Value < 0)
+                {
+                    var tradeTime = trade.DateTime.ToUniversalTime();
+                    var ageMilliseconds = Math.Max(0, (utcNow - tradeTime).TotalMilliseconds);
+                    var weight = Math.Pow(2, -ageMilliseconds / halfLifeDivisor);
+
+                    tiltScore += -trade.GrossPnl.Value * weight;
+                }
+            }
+
             return tiltScore;
-        }
-
-        private double GetImpact(Trade trade, DateTime now)
-        {
-            var tradeTime = trade.DateTime.ToUniversalTime();
-            var ageMilliseconds = Math.Max(0, (now - tradeTime).TotalMilliseconds);
-            var weight = Math.Pow(2, -ageMilliseconds / (_settings.HalfLifeMinutes * 60_000.0));
-            var impact = -trade.GrossPnl.Value * weight;
-            return impact;
         }
 
         private void UpdateTradingState()

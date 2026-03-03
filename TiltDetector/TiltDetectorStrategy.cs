@@ -13,7 +13,7 @@ namespace TiltDetector
             IStrategyLogger
     {
         private bool _disposed;
-        private StrategyCore? _core;
+        private TiltMonitor? _tiltMonitor;
         private Symbol? _heartbeatSymbol;
         private CustomTimeProvider? _timeProvider;
 
@@ -39,13 +39,15 @@ namespace TiltDetector
                 var context = new StrategyContext(
                     Logger: this,
                     Settings: this,
+                    TradeProvider: tradesHistoryRequestParameters =>
+                        Core.GetTrades(tradesHistoryRequestParameters),
                     TimeProvider: _timeProvider
                 );
-                _core = new StrategyCore(context);
-                _core.PropertyChanged += Core_PropertyChanged;
+                _tiltMonitor = new TiltMonitor(context);
+                _tiltMonitor.PropertyChanged += TiltMonitor_PropertyChanged;
 
                 Core.TradeAdded += OnTradeAdded;
-                _core.Run();
+                _tiltMonitor.Run();
             }
             catch (Exception ex)
             {
@@ -53,21 +55,21 @@ namespace TiltDetector
             }
         }
 
-        private void Core_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+        private void TiltMonitor_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            if (e.PropertyName == nameof(StrategyCore.IsTradingLocked) && _core != null)
+            if (e.PropertyName == nameof(TiltMonitor.IsTradingLocked) && _tiltMonitor != null)
             {
-                if (_core.IsTradingLocked)
+                if (_tiltMonitor.IsTradingLocked)
                 {
                     LogInfo(
-                        $"Tilt score {_core.TiltScore} above lock threshold {LockThreshold}! Locking platform trading."
+                        $"Tilt score {_tiltMonitor.TiltScore} above lock threshold {LockThreshold}! Locking platform trading."
                     );
                     Core.Instance.TradingStatus = TradingStatus.Locked;
                 }
                 else
                 {
                     LogInfo(
-                        $"Tilt score {_core.TiltScore} decayed below unlock threshold {UnlockThreshold}. Unlocking platform trading."
+                        $"Tilt score {_tiltMonitor.TiltScore} decayed below unlock threshold {UnlockThreshold}. Unlocking platform trading."
                     );
                     Core.Instance.TradingStatus = TradingStatus.Allowed;
                 }
@@ -77,7 +79,7 @@ namespace TiltDetector
         public void InitializeHeartbeat()
         {
             var firstSymbol = Core
-                .Symbols.Where(s => s.ConnectionId == Account.ConnectionId)
+                .Symbols.Where(s => s.ConnectionId == Account?.ConnectionId)
                 .FirstOrDefault();
 
             if (firstSymbol == null)
@@ -107,7 +109,7 @@ namespace TiltDetector
 
             try
             {
-                _core?.OnTradeAdded(Trade);
+                _tiltMonitor?.OnTradeAdded(Trade);
             }
             catch (Exception ex)
             {
@@ -125,11 +127,11 @@ namespace TiltDetector
                 _heartbeatSymbol = null;
             }
 
-            if (_core != null)
+            if (_tiltMonitor != null)
             {
-                _core.PropertyChanged -= Core_PropertyChanged;
-                _core.Dispose();
-                _core = null;
+                _tiltMonitor.PropertyChanged -= TiltMonitor_PropertyChanged;
+                _tiltMonitor.Dispose();
+                _tiltMonitor = null;
             }
 
             _timeProvider = null;
@@ -148,7 +150,8 @@ namespace TiltDetector
                     new StrategyMetric
                     {
                         Name = "Tilt Score",
-                        FormattedValue = _core != null ? $"{_core.TiltScore:F2}" : "N/A",
+                        FormattedValue =
+                            _tiltMonitor != null ? $"{_tiltMonitor.TiltScore:F2}" : "N/A",
                     }
                 );
                 result.Add(
