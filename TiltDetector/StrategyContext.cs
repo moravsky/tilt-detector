@@ -13,7 +13,7 @@ namespace TiltDetector
 
     public interface IStrategySettings
     {
-        Account Account { get; }
+        Account? Account { get; }
         double HalfLifeMinutes { get; }
         double LockThreshold { get; }
         double UnlockThreshold { get; }
@@ -30,17 +30,10 @@ namespace TiltDetector
     public record StrategyContext(
         IStrategyLogger Logger,
         IStrategySettings Settings,
+        Func<TradesHistoryRequestParameters, IEnumerable<Trade>> TradeProvider,
         TimeProvider? TimeProvider = null
     ) : IStrategyContext
     {
-        private readonly TiltDetectorStrategy _tiltDetectorStrategy;
-
-        public StrategyContext(TiltDetectorStrategy tiltDetectorStrategy)
-            : this(Logger: tiltDetectorStrategy, Settings: tiltDetectorStrategy)
-        {
-            _tiltDetectorStrategy = tiltDetectorStrategy;
-        }
-
         // Fallback to the real system clock if not explicitly provided
         TimeProvider IStrategyContext.TimeProvider => TimeProvider ?? TimeProvider.System;
 
@@ -48,7 +41,7 @@ namespace TiltDetector
             TradesHistoryRequestParameters tradesHistoryRequestParameters
         )
         {
-            return TiltDetectorStrategy.GetTrades(tradesHistoryRequestParameters);
+            return TradeProvider(tradesHistoryRequestParameters);
         }
     }
 }

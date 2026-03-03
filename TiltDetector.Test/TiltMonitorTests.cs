@@ -7,7 +7,7 @@ using Xunit;
 
 namespace TiltDetector.Test
 {
-    public class StrategyCoreTests
+    public class TiltMonitorTests
     {
         private readonly Mock<IStrategyLogger> _loggerMock;
         private readonly Mock<IStrategySettings> _settingsMock;
@@ -30,7 +30,7 @@ namespace TiltDetector.Test
         );
         private readonly CustomTimeProvider _timeProvider;
 
-        public StrategyCoreTests()
+        public TiltMonitorTests()
         {
             _account = QuantowerTestFactory.CreateAccount(AccountId);
 
@@ -53,12 +53,12 @@ namespace TiltDetector.Test
                 .Returns([]);
         }
 
-        private StrategyCore CreateStrategyCore(IEnumerable<Trade> trades)
+        private TiltMonitor CreateTiltMonitor(IEnumerable<Trade> trades)
         {
             _contextMock
                 .Setup(c => c.GetTrades(It.IsAny<TradesHistoryRequestParameters>()))
                 .Returns(trades);
-            return new StrategyCore(_contextMock.Object);
+            return new TiltMonitor(_contextMock.Object);
         }
 
         private Trade MakeLoss(DateTime utcTime, double loss) =>
@@ -77,19 +77,19 @@ namespace TiltDetector.Test
         [Fact]
         public void TiltScore_IsZero_WhenNoTrades()
         {
-            var core = CreateStrategyCore([]);
-            core.Run();
+            var monitor = CreateTiltMonitor([]);
+            monitor.Run();
 
-            Assert.Equal(0, core.TiltScore);
+            Assert.Equal(0, monitor.TiltScore);
         }
 
         [Fact]
         public void TiltScore_IsZero_WhenOnlyWinningTrades()
         {
-            var core = CreateStrategyCore([MakeWin(_now.AddMinutes(-5), 100)]);
-            core.Run();
+            var monitor = CreateTiltMonitor([MakeWin(_now.AddMinutes(-5), 100)]);
+            monitor.Run();
 
-            Assert.Equal(0, core.TiltScore);
+            Assert.Equal(0, monitor.TiltScore);
         }
 
         [Theory]
@@ -102,59 +102,59 @@ namespace TiltDetector.Test
         )
         {
             var tradeTime = _now.AddMinutes(-HalfLifeMinutes * halfLivesElapsed);
-            var core = CreateStrategyCore([MakeLoss(tradeTime, 100)]);
+            var monitor = CreateTiltMonitor([MakeLoss(tradeTime, 100)]);
 
-            core.Run();
-            Assert.Equal(expectedScore, core.TiltScore, precision: 6);
+            monitor.Run();
+            Assert.Equal(expectedScore, monitor.TiltScore, precision: 6);
         }
 
         [Fact]
         public void TiltScore_SumsMultipleLosses()
         {
             var trades = new[] { MakeLoss(_now, 100), MakeLoss(_now, 50) };
-            var core = CreateStrategyCore(trades);
-            core.Run();
+            var monitor = CreateTiltMonitor(trades);
+            monitor.Run();
 
-            Assert.Equal(150.0, core.TiltScore, precision: 6);
+            Assert.Equal(150.0, monitor.TiltScore, precision: 6);
         }
 
         [Fact]
         public void TiltScore_IgnoresTrades_FromOtherAccounts()
         {
-            var core = CreateStrategyCore([MakeLossOnOtherAccount(_now, 500)]);
-            core.Run();
+            var monitor = CreateTiltMonitor([MakeLossOnOtherAccount(_now, 500)]);
+            monitor.Run();
 
-            Assert.Equal(0, core.TiltScore);
+            Assert.Equal(0, monitor.TiltScore);
         }
 
         [Fact]
         public void TiltScore_UpdatesOnTradeAdded()
         {
-            var core = CreateStrategyCore([]);
-            core.Run();
-            Assert.Equal(0, core.TiltScore);
+            var monitor = CreateTiltMonitor([]);
+            monitor.Run();
+            Assert.Equal(0, monitor.TiltScore);
 
             var newTrade = MakeLoss(_now, 100);
             _contextMock
                 .Setup(c => c.GetTrades(It.IsAny<TradesHistoryRequestParameters>()))
                 .Returns([newTrade]);
 
-            core.OnTradeAdded(newTrade);
+            monitor.OnTradeAdded(newTrade);
 
-            Assert.Equal(100.0, core.TiltScore, precision: 6);
+            Assert.Equal(100.0, monitor.TiltScore, precision: 6);
         }
 
         [Fact]
         public void TradingLocked_Fires_WhenScoreCrossesLockThreshold()
         {
-            var core = CreateStrategyCore([]);
-            core.Run();
+            var monitor = CreateTiltMonitor([]);
+            monitor.Run();
 
             bool locked = false;
-            core.PropertyChanged += (s, e) =>
+            monitor.PropertyChanged += (s, e) =>
             {
-                if (e.PropertyName == nameof(StrategyCore.IsTradingLocked))
-                    locked = core.IsTradingLocked;
+                if (e.PropertyName == nameof(TiltMonitor.IsTradingLocked))
+                    locked = monitor.IsTradingLocked;
             };
 
             var bigLoss = MakeLoss(_now, LockThreshold + 1);
@@ -162,7 +162,7 @@ namespace TiltDetector.Test
                 .Setup(c => c.GetTrades(It.IsAny<TradesHistoryRequestParameters>()))
                 .Returns([bigLoss]);
 
-            core.OnTradeAdded(bigLoss);
+            monitor.OnTradeAdded(bigLoss);
 
             Assert.True(locked);
         }
@@ -171,17 +171,20 @@ namespace TiltDetector.Test
         public void TradingLocked_DoesNotFire_WhenAlreadyLocked()
         {
             var bigLoss = MakeLoss(_now, LockThreshold + 1);
-            var core = CreateStrategyCore([bigLoss]);
-            core.Run();
+            var monitor = CreateTiltMonitor([bigLoss]);
+            monitor.Run();
 
             int lockEventCount = 0;
-            core.PropertyChanged += (s, e) =>
+            monitor.PropertyChanged += (s, e) =>
             {
-                if (e.PropertyName == nameof(StrategyCore.IsTradingLocked) && core.IsTradingLocked)
+                if (
+                    e.PropertyName == nameof(TiltMonitor.IsTradingLocked)
+                    && monitor.IsTradingLocked
+                )
                     lockEventCount++;
             };
 
-            core.OnTradeAdded(bigLoss);
+            monitor.OnTradeAdded(bigLoss);
 
             Assert.Equal(0, lockEventCount);
         }
@@ -190,13 +193,16 @@ namespace TiltDetector.Test
         public void TradingUnlocked_Fires_WhenScoreDropsBelowUnlockThreshold()
         {
             var bigLoss = MakeLoss(_now, LockThreshold + 1);
-            var core = CreateStrategyCore([bigLoss]);
-            core.Run();
+            var monitor = CreateTiltMonitor([bigLoss]);
+            monitor.Run();
 
             bool unlocked = false;
-            core.PropertyChanged += (s, e) =>
+            monitor.PropertyChanged += (s, e) =>
             {
-                if (e.PropertyName == nameof(StrategyCore.IsTradingLocked) && !core.IsTradingLocked)
+                if (
+                    e.PropertyName == nameof(TiltMonitor.IsTradingLocked)
+                    && !monitor.IsTradingLocked
+                )
                     unlocked = true;
             };
 
@@ -204,7 +210,7 @@ namespace TiltDetector.Test
                 .Setup(c => c.GetTrades(It.IsAny<TradesHistoryRequestParameters>()))
                 .Returns([]);
 
-            core.OnTradeAdded(MakeWin(_now, 1));
+            monitor.OnTradeAdded(MakeWin(_now, 1));
 
             Assert.True(unlocked);
         }
@@ -212,17 +218,20 @@ namespace TiltDetector.Test
         [Fact]
         public void TradingUnlocked_DoesNotFire_WhenNotLocked()
         {
-            var core = CreateStrategyCore([]);
-            core.Run();
+            var monitor = CreateTiltMonitor([]);
+            monitor.Run();
 
             int unlockCount = 0;
-            core.PropertyChanged += (s, e) =>
+            monitor.PropertyChanged += (s, e) =>
             {
-                if (e.PropertyName == nameof(StrategyCore.IsTradingLocked) && !core.IsTradingLocked)
+                if (
+                    e.PropertyName == nameof(TiltMonitor.IsTradingLocked)
+                    && !monitor.IsTradingLocked
+                )
                     unlockCount++;
             };
 
-            core.OnTradeAdded(MakeWin(_now, 1));
+            monitor.OnTradeAdded(MakeWin(_now, 1));
 
             Assert.Equal(0, unlockCount);
         }
@@ -232,48 +241,51 @@ namespace TiltDetector.Test
         {
             // Start with a 100 point loss
             var trade = MakeLoss(_now, 100);
-            var core = CreateStrategyCore([trade]);
+            var monitor = CreateTiltMonitor([trade]);
 
             // Run evaluates the initial score (100) and starts the background timer
-            core.Run();
-            Assert.Equal(100.0, core.TiltScore, precision: 6);
+            monitor.Run();
+            Assert.Equal(100.0, monitor.TiltScore, precision: 6);
 
             // Fast-forward the CustomTimeProvider by exactly 1 Half-Life (30 mins).
             // This natively triggers the background timer callback.
             _timeProvider.Advance(_now.AddMinutes(HalfLifeMinutes));
 
             // The timer should have successfully recalculated the score to exactly 50%
-            Assert.Equal(50.0, core.TiltScore, precision: 6);
+            Assert.Equal(50.0, monitor.TiltScore, precision: 6);
 
             // Fast-forward by another Half-Life
             _timeProvider.Advance(_now.AddMinutes(HalfLifeMinutes * 2));
 
             // Score should now be 25% of the original
-            Assert.Equal(25.0, core.TiltScore, precision: 6);
+            Assert.Equal(25.0, monitor.TiltScore, precision: 6);
         }
 
         [Fact]
         public void DecayTimer_FiresUnlockEvent_WhenScoreDropsBelowThreshold()
         {
             var bigLoss = MakeLoss(_now, LockThreshold + 500);
-            var core = CreateStrategyCore([bigLoss]);
+            var monitor = CreateTiltMonitor([bigLoss]);
 
             bool unlocked = false;
-            core.PropertyChanged += (s, e) =>
+            monitor.PropertyChanged += (s, e) =>
             {
-                if (e.PropertyName == nameof(StrategyCore.IsTradingLocked) && !core.IsTradingLocked)
+                if (
+                    e.PropertyName == nameof(TiltMonitor.IsTradingLocked)
+                    && !monitor.IsTradingLocked
+                )
                     unlocked = true;
             };
 
-            core.Run();
+            monitor.Run();
 
-            Assert.True(core.TiltScore >= LockThreshold);
+            Assert.True(monitor.TiltScore >= LockThreshold);
             Assert.False(unlocked);
 
             _timeProvider.Advance(_now.AddMinutes(HalfLifeMinutes * 2));
 
             Assert.True(
-                core.TiltScore < UnlockThreshold,
+                monitor.TiltScore < UnlockThreshold,
                 "Score should have dropped below UnlockThreshold"
             );
             Assert.True(unlocked, "PropertyChanged event should have fired indicating unlock");

@@ -7,7 +7,7 @@ namespace TiltDetector
     public partial class TiltDetectorStrategy
     {
         [InputParameter]
-        public Account Account { get; private set; }
+        public Account? Account { get; private set; }
 
         [InputParameter]
         public double HalfLifeMinutes { get; private set; } = 30.0;
